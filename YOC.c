@@ -5,7 +5,6 @@
 // created:	15 March 1998
 // author:	Elliott Lee
 // company:	Protocol Software
-// e-mail:	tenchi@netmagic.net
 // url:		http://www.netmagic.net/~tenchi
 //
 // copyright:	(C) 1998 Elliott Lee
@@ -19,6 +18,38 @@
 // notes:	This is a quick-n-dirty script.  Not much documentation
 //		is available.
 
+
+#define PROG_VER	"3.0"
+
+
+// sometimes the _ is required!!!
+#ifdef __linux__
+#define  FCLOSEALL_FUNCTION fcloseall();
+#else
+#define  FCLOSEALL_FUNCTION _fcloseall();
+#endif
+
+
+/*   NOTES:
+Maintained here: https://github.com/gwald/YOC
+
+Build:
+gcc -static-libgcc -static-libstdc++ -static -O3  YOC.c -o YOC
+tcc -m32 YOC.c -oYOC.exe
+
+History:
+
+v3: fixed bugs, added fcaseopen.c by OneSadCookie
+
+Version 2:
+Replaced old DOS stuff
+leading "0x" or trailing "h" support on hex init RAM address.
+Last line can be an executable if it has no #define value, ie only the filename is defined.
+Added Exec load address to #define file.
+ */
+
+
+
 // ......................................................................
 // GENERAL INCLUDES
 // ......................................................................
@@ -31,6 +62,8 @@
 #include <string.h>
 #include <ctype.h>
 
+
+
 // ......................................................................
 // GLOBAL VARS / DEFINES
 // ......................................................................
@@ -40,13 +73,14 @@
 #define	NUM_ARGS	4
 #define PREFIX_DLOAD	"local dload"
 #define PREFIX_LOAD		"local load"
-#define GO_LOAD			"GO"
+#define GO_LOAD          "GO"
+
+
 
 #define NEXT_SPACE_HEADER "FREE_SPACE"
 #define EXE_NAME_HEADER "EXE"
 #define PREFIX_HEADER	"#define"
-#define PROG_VER	"2.0"
-#define WBUF		2048
+#define WBUF		4096
 
 
 /**** YAR EXE ****/
@@ -101,7 +135,10 @@ typedef	struct allEcoffHdr{
 /**** YAR EXE ****/
 
 
-char	*WorkingBuf;
+
+//https://github.com/OneSadCookie/fcaseopen/blob/master/fcaseopen.c
+FILE *fcaseopen(char const *path, char const *mode);
+
 
 // ......................................................................
 // PROTOTYPES
@@ -117,9 +154,34 @@ int 		IsComment( char *s );
 int		IsHex( char *num );
 void		OverwritePrompt( char *f );
 int 		ProcessList( long unsigned base, char *filelist,
-		char *fileauto, char *fileheader, char *workbuffer,
-		int bufsize );
+		char *fileauto, char *fileheader);
 void 		ShowHelp( void );
+
+
+
+
+// https://stackoverflow.com/questions/656542/trim-a-string-in-c
+char *ltrim(char *s)
+{
+	while(isspace(*s)) s++;
+	return s;
+}
+
+char *rtrim(char *s)
+{
+	char* back = s + strlen(s);
+	while(isspace(*--back));
+	*(back+1) = '\0';
+	return s;
+}
+
+char *trim(char *s)
+{
+	return rtrim(ltrim(s));
+}
+
+
+
 
 // ......................................................................
 // in     number of command line args, command line argument pointer,
@@ -131,12 +193,20 @@ void 		ShowHelp( void );
 void CheckArgs( int argc, char *argv[], unsigned long *base,
 		char *flist, char *fauto, char *fh )
 {
+
+
 	// seeking help?
-	if( strcmpi(argv[1],"-h")==0 )
+	if( strcmp(argv[1],"-h")==0 ||  strcmp(argv[1],"-H")==0 )
 	{
 		ShowHelp();
 		exit(0);
 	}  // if( strcmpi(argv[1],"-h") )
+
+
+
+	// map the arguments to meaningful names
+
+
 
 	// right number of args?
 	if( argc!=(NUM_ARGS+1) )
@@ -156,11 +226,11 @@ void CheckArgs( int argc, char *argv[], unsigned long *base,
 		ExitError( "List file does not exist!" );
 
 	// duplicate names?
-	if( strcmpi(fauto,flist)==0 )
+	if( strcmp(fauto,flist) == 0)
 		ExitError( "The <auto file> cannot be the same as the list file!" );
-	if( strcmpi(fh,flist)==0 )
+	if( strcmp(fh,flist) == 0 )
 		ExitError( "The <header file> cannot be the same as the list file!" );
-	if( strcmpi(fh,fauto)==0 )
+	if( strcmp(fh,fauto) == 0 )
 		ExitError( "The <auto file> and <header file> cannot be the same!" );
 
 #if 0 //removed prompts
@@ -183,7 +253,7 @@ char *EliminateSpaces( char *s )
 	while( *s>0 && *s<33 )
 		s++;
 
-	return(s);
+	return s;
 }
 
 // ......................................................................
@@ -199,7 +269,7 @@ void ExitError( char *msg )
 			"<header file>\n\n" \
 			"Use \"yoc -h\" for help.\n" );
 
-	_fcloseall();
+	FCLOSEALL_FUNCTION;
 
 	exit(0);
 }
@@ -214,9 +284,11 @@ int FileExists( char *f )
 {
 	FILE	*h;
 
-	h=fopen(f,"rt");
+	h=fcaseopen(f,"rt");
 	if( h==NULL )
+	{
 		return(0);
+	}
 
 	fclose(h);
 	return(1);
@@ -249,7 +321,7 @@ int IsBlank( char *s )
 // ......................................................................
 int IsComment( char *s )
 {
-	s=EliminateSpaces(s);
+	s=trim(s);
 
 	if( *s=='#' )
 		return(1);
@@ -383,40 +455,83 @@ void OverwritePrompt( char *f )
 // notes  .
 // ......................................................................
 int ProcessList( long unsigned base, char *filelist, char *fileauto,
-		char *fileheader, char *workbuffer, int bufsize )
+		char *fileheader )
 {
-	FILE	*flist,*fauto,*fheader,*fdata;
+	FILE	*flist,*fauto,*fauto_pcsxr,*fheader,*fdata;
 	long	linestotal=0,
 			linesdata=0,
 			lineserrors=0,
-			is_exec=0;
+			is_exec;
 	char	*definename, *filename;
 	long unsigned start=base,fsize=0,bytestotal=0;
 
-	printf(" test: %x\n", base);
+	char workbuffer[WBUF], *line_p;
+
+	// printf(" filelist: %s\n", filelist);
+	// printf(" fileauto: %s\n", fileauto);
+	// printf(" fileheader: %s\n", fileheader);
 
 	// open our handles!
-	flist=fopen(filelist,"rt");
+	flist=fcaseopen(filelist,"rt");
 	if( flist==NULL )
+	{
 		ExitError( "Can't open list file." );
-	fauto=fopen(fileauto,"wt+");
+	}
+
+	fauto=fcaseopen(fileauto,"wt+");
 	if( fauto==NULL )
+	{
 		ExitError( "Can't write/create auto file." );
-	fheader=fopen(fileheader,"wt+");
+	}
+
+
+
+	{
+		char f[1024];
+
+		sprintf(f, "%s.pcsxr", fileauto);
+
+		fauto_pcsxr=fcaseopen(f,"wt+");
+
+		if( fauto_pcsxr==NULL )
+		{
+			ExitError( "Can't write/create fauto_pcsxr file." );
+		}
+
+
+		fprintf( fauto_pcsxr,
+					"# These constants automatically calculated with YAC %s  " \
+					"\n# (c) 3/1998 Elliott Lee.                               " \
+					"\n#                                                       " \
+					"\n# Include this file in your main code source.  e.g.     " \
+					"\n#                                                       " \
+					"\n#      #include \"%s\"        " \
+					"\n#                                                    " \
+					"\n# Base begins at 0x%8x                             ",
+					PROG_VER,fileheader,(unsigned int)start  );
+
+		fprintf(fauto_pcsxr, "\n#\n# PCSXR (https://www.psx.dev/getting-started) this siocons file is loaded like this in .vscode/launch.json: \n#\n# \"autorun\": [\n#   \"monitor reset shellhalt\",\n#   \"source %s\",\n#   \"load ${workspaceRootFolderName}.elf\",\n#   \"tbreak main\",\n#   \"continue\"\n#]\n\n\n",f);
+
+
+	}
+
+	fheader=fcaseopen(fileheader,"wt+");
 	if( fheader==NULL )
+	{
 		ExitError( "Can't write/create header file." );
 
+	}
 	// add some heading info
 	fprintf( fheader,
-			"/* These constants automatically calculated with YAC %s  */\n" \
-			"/* (c) 3/1998 Elliott Lee (tenchi@netmagic.net).          */\n" \
-			"/*                                                        */\n" \
-			"/* Include this file in your main code source.  e.g.      */\n" \
-			"/*                                                        */\n" \
-			"/*      #include \"%s\"        */\n" \
-			"/*                                                        */\n" \
-			"/* Base begins at 0x%0.8x                              */\n\n",
-			PROG_VER,fileheader );
+			"/* These constants automatically calculated with YAC %s  \n" \
+			" (c) 3/1998 Elliott Lee.                               \n" \
+			"                                                       \n" \
+			" Include this file in your main code source.  e.g.     \n" \
+			"                                                       \n" \
+			"      #include \"%s\"        \n" \
+			"                                                       \n" \
+			" Base begins at 0x%8x                             \n*/\n\n",
+			PROG_VER,fileheader,(unsigned int)start  );
 
 	// check bounds
 	if( base<BOUND_MIN )
@@ -427,79 +542,86 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 	while( !feof(flist) )
 	{
+		is_exec=0; // default is data load
+
 		// get a line!
-		fgets(workbuffer,bufsize,flist);
+		fgets(workbuffer,WBUF,flist);
 		linestotal++;
+		printf(workbuffer,"\n");
 
 		// make sure we're dealing with a command here...
-		workbuffer=EliminateSpaces(workbuffer);
-		if( IsBlank(workbuffer) || IsComment(workbuffer) )
+		line_p=trim(workbuffer);
+		if( line_p[0]==0 || IsBlank(line_p) || IsComment(line_p) )
 			continue;
+
 		linesdata++;
 
 		// okey, now separate this into two parameters!
 
 		// define name
-		definename=workbuffer;
+		definename=line_p;
 
 		// seek to end of this word
-		while( *workbuffer!=0 && *workbuffer>=33 )
-			workbuffer++;
+		while( *line_p!=0 && *line_p>=33 )
+			line_p++;
 
-		// did we run out of chars?
-		if( *workbuffer==0 )
+		// did we run out of chars? next char's should be filename, if not it's a single command like NY exe
+		if( *line_p==0 )
 		{
+#if 0
 			if(linestotal != linesdata)
 			{
 				printf( "Line %ld: Missing file name (2nd parameter).\n",linestotal );
-				lineserrors++;
+				//lineserrors++;
 				continue;
 			}
 			else // last line is exe
+#endif
 			{
 				is_exec = 1;
 				filename = definename;
 			}
 
-		}  // if( *workbuffer==0 )
+		}  // if( *line_p==0 )
 
 		if(!is_exec) //process the rest of the line
 		{
 			// we have landed on the end of this word.  change this character to
 			// a null, advance to the next character, and then seek to the next
 			// word/end-of-string
-			*workbuffer=0;
-			workbuffer=EliminateSpaces(workbuffer+1);
+			*line_p=0;
+			line_p=trim(line_p+1);
 
 			// are we at the end?
-			if( *workbuffer==0 )
+			if( *line_p==0 )
 			{
 				printf( "Line %ld: Missing file name (2nd parameter).\n",linestotal );
+				printf(workbuffer,"\n");
 				lineserrors++;
 				continue;
-			}  // if( *workbuffer==0 )
+			}  // if( *line_p==0 )
 
 			// okay, set the file name
-			filename=workbuffer;
+			filename=line_p;
 
 			// seek to end of word
-			while( *workbuffer!=0 && *workbuffer>=33 )
-				workbuffer++;
+			while( *line_p!=0 && *line_p>=33 )
+				line_p++;
 
 			// are we at the end of the string?
-			if( *workbuffer!=0 )
+			if( *line_p!=0 )
 			{
 				// hm... no, we're not.  looks like some straggler characters.
 				// let's drop the NULL here to terminate the file name, but keep
 				// checking for superfluous characters.
-				*workbuffer=0;
-				workbuffer=EliminateSpaces(workbuffer+1);
+				*line_p=0;
+				line_p=trim(line_p+1);
 
 				// is the current character the end of string?  if not, then print
 				// a friendly warning message.
-				if( *workbuffer>0 )
+				if( *line_p>0 )
 					printf( "Line %ld: Extra characters on line; ignored.\n",linestotal );
-			}  // if( *workbuffer!=0 )
+			}  // if( *line_p!=0 )
 		}// if(!is_exec)
 
 		// okay, now let's get the size of the file!
@@ -512,7 +634,7 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 		else
 		{
 			// remember to open in BINARY mode!
-			fdata=fopen(filename,"rb");
+			fdata=fcaseopen(filename,"rb");
 			if( fdata==NULL )
 			{
 				printf( "Line %ld: Can't read \"%s\".\n",linestotal,filename );
@@ -537,19 +659,19 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 
 				// End space
-					fprintf(fheader,PREFIX_HEADER "\t%s\t\t(0x%lx) /* Address of last asset + size */ \n",
-							NEXT_SPACE_HEADER,base );
+				fprintf(fheader,PREFIX_HEADER "\t%s\t\t(0x%lx) /* Address of last asset + size */ \n",
+						NEXT_SPACE_HEADER,(long unsigned int)base );
 
-					// add some closing stuff
-					fprintf(fheader,"\n/* Total Asset size: 0x%lx (%ld) bytes */\n\n",
-							bytestotal,bytestotal);
+				// add some closing stuff
+				fprintf(fheader,"\n/* Total Asset size: 0x%lx (%ld) bytes */\n\n",
+						bytestotal,(long unsigned int) bytestotal);
 
 
 				// cool.  now print out the entries to the two files!
 				fprintf(fauto,PREFIX_LOAD " %s\n",filename);
-				fprintf(fauto,GO_LOAD " \n",filename);
+				fprintf(fauto,GO_LOAD " \n");
 				fprintf(fheader,PREFIX_HEADER "\t%s_LOAD_ADDR\t\t(0x%lx)\n",
-						(EXE_NAME_HEADER),exe.sections[0].s_paddr);
+						(EXE_NAME_HEADER), (long unsigned int)exe.sections[0].s_paddr);
 
 				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t (%lu)\t/* %lu */\n\n",
 						(EXE_NAME_HEADER),fsize,fsize);
@@ -565,11 +687,28 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 
 				// cool.  now print out the entries to the two files!
-				fprintf(fauto,PREFIX_DLOAD "\t%s\t\t%lx\n",filename,base);
+				fprintf(fauto,PREFIX_DLOAD "\t%s\t\t0x%lx\n",filename,base);
+
+/*  PCSXR SIO file laoded like this in the .vscode/launch.json where data.sio.pcsxr is your load batch file:
+*
+*
+"autorun": [
+	"monitor reset shellhalt",
+	"source data.sio.pcsxr",
+	"load ${workspaceRootFolderName}.elf",
+	"tbreak main",
+	"continue"
+]
+*
+*/
+				fprintf(fauto_pcsxr,"restore  %s  binary  0x%lx\n",filename,base);
+
+
+
 				fprintf(fheader,PREFIX_HEADER "\t%s\t\t(0x%lx)\n",
-						definename,base,fsize);
-				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t(0x%x)\t/* %lu */\n\n",
-						definename,fsize,fsize);
+						definename,(long unsigned int)base);
+				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t(0x%lx)\t/* %lu */\n\n",
+						definename,(long unsigned int)fsize,fsize);
 			}
 
 			// advance to the next base
@@ -585,7 +724,14 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 			else
 				base+=fsize;
 
+			if(is_exec)
+				break;
+
+
 		}  // else if( !FileExists(filename) )
+
+		//		if( *line_p==0 )
+		//			break;
 	}  // while( !feof(flist) )
 
 
@@ -614,7 +760,7 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 
 	// close our handles!
-	_fcloseall();
+	FCLOSEALL_FUNCTION;
 
 	printf( "\n" \
 			"Lines in list file:  %ld\n" \
@@ -649,17 +795,19 @@ void ShowHelp( void )
 			"  YOC (Yaroze Offset Calculator) is used to calculate the addresses for the\n" \
 			"files you have.\n" \
 			"  The <hex start addr> is the base address to be used for offset\n" \
-			"calculations.  Only supply the number (no leading\"0x\" or trailing \"h\".\n" \
+			"calculations.\n" \
 			"  The <list file> is a text file where each non-blank line is in the\n" \
 			"format: <constant name> <file name>.  The constant is the identifier name\n" \
 			"to be put in the header file, the file is the path to the file to include.\n" \
 			"Use whitespace between them.  You can make a line a comment by having the first\n" \
 			"character be a \"#\".\n" \
+			"The optional executable must be on the last line and without a constant_name value\n" \
+
 			"  The <auto file> is one output file which you can cut/paste into your Yaroze\n" \
 			"batch loading file.  Each line will retain the path you used for the <file\n" \
 			"name>.  The <header file> is a C header file with #defines to the <file name>.\n" \
 			"\n" \
-			"(c) 3/1998 Elliott Lee (tenchi@netmagic.net).\n" \
+			"(c) 3/1998 Elliott Lee.\n" \
 			"Based off of a program by Don Yang.\n",
 			PROG_VER );
 }
@@ -676,26 +824,147 @@ int main( int argc, char *argv[] )
 	unsigned long	Base;
 	int	ret;
 
-	// map the arguments to meaningful names
-	filelist=argv[2];
-	fileauto=argv[3];
-	fileh=argv[4];
+	if( argc ==1 || argc != 5 )
+	{
+		ShowHelp();
+		exit(0);
+	}  // if( strcmpi(argv[1],"-h") )
+
+
+	filelist=trim(argv[2]);
+	fileauto=trim(argv[3]);
+	fileh=trim(argv[4]);
 
 	// check our parameters
 	CheckArgs( argc,argv,&Base,filelist,fileauto,fileh );
 
-	// alloc mem
-	WorkingBuf = malloc(WBUF*sizeof(char));
-	if( WorkingBuf==0 )
-		ExitError( "Can't allocate working buffer memory!" );
 
 	// away we go!
-	ret = ProcessList( Base,filelist,fileauto,fileh,WorkingBuf,WBUF);
+	ret = ProcessList( Base,filelist,fileauto,fileh);
 
-	// release memory
-	free( WorkingBuf );
 
 	return ret;
 }
 
 // end
+
+
+
+
+//https://github.com/OneSadCookie/fcaseopen/blob/master/fcaseopen.c
+
+#include <unistd.h>
+void casechdir(char const *path)
+{
+#if !defined(_WIN32)
+	char *r = alloca(strlen(path) + 2);
+	if (casepath(path, r))
+	{
+		chdir(r);
+	}
+	else
+	{
+		errno = ENOENT;
+	}
+#else
+	chdir(path);
+#endif
+}
+
+
+#if !defined(_WIN32)
+#include <stdlib.h>
+#include <string.h>
+
+#include <dirent.h>
+#include <errno.h>
+#include <unistd.h>
+
+// r must have strlen(path) + 2 bytes
+static int casepath(char const *path, char *r)
+{
+	size_t l = strlen(path);
+	char *p = alloca(l + 1);
+	strcpy(p, path);
+	size_t rl = 0;
+
+	DIR *d;
+	if (p[0] == '/')
+	{
+		d = opendir("/");
+		p = p + 1;
+	}
+	else
+	{
+		d = opendir(".");
+		r[0] = '.';
+		r[1] = 0;
+		rl = 1;
+	}
+
+	int last = 0;
+	char *c = strsep(&p, "/");
+	while (c)
+	{
+		if (!d)
+		{
+			return 0;
+		}
+
+		if (last)
+		{
+			closedir(d);
+			return 0;
+		}
+
+		r[rl] = '/';
+		rl += 1;
+		r[rl] = 0;
+
+		struct dirent *e = readdir(d);
+		while (e)
+		{
+			if (strcasecmp(c, e->d_name) == 0)
+			{
+				strcpy(r + rl, e->d_name);
+				rl += strlen(e->d_name);
+
+				closedir(d);
+				d = opendir(r);
+
+				break;
+			}
+
+			e = readdir(d);
+		}
+
+		if (!e)
+		{
+			strcpy(r + rl, c);
+			rl += strlen(c);
+			last = 1;
+		}
+
+		c = strsep(&p, "/");
+	}
+
+	if (d) closedir(d);
+	return 1;
+}
+#endif
+
+FILE *fcaseopen(char const *path, char const *mode)
+{
+	FILE *f = fopen(path, mode);
+#if !defined(_WIN32)
+	if (!f)
+	{
+		char *r = alloca(strlen(path) + 2);
+		if (casepath(path, r))
+		{
+			f = fopen(r, mode);
+		}
+	}
+#endif
+return f;
+}
