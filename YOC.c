@@ -19,7 +19,7 @@
 //		is available.
 
 
-#define PROG_VER	"3.0"
+#define PROG_VER	"v4.0 - More YOC outputs - Sept-2024"
 
 
 // sometimes the _ is required!!!
@@ -144,7 +144,7 @@ FILE *fcaseopen(char const *path, char const *mode);
 // PROTOTYPES
 // ......................................................................
 void		CheckArgs( int argc, char *argv[], unsigned long *base,
-		char *flist, char *fauto, char *fh );
+		char *flist );
 char 		*EliminateSpaces( char *s );
 void		ExitError( char *msg );
 int		FileExists( char *f );
@@ -153,8 +153,7 @@ int 		IsBlank( char *s );
 int 		IsComment( char *s );
 int		IsHex( char *num );
 void		OverwritePrompt( char *f );
-int 		ProcessList( long unsigned base, char *filelist,
-		char *fileauto, char *fileheader);
+int 		ProcessList( long unsigned base, char *filelist, char *project);
 void 		ShowHelp( void );
 
 
@@ -191,7 +190,7 @@ char *trim(char *s)
 // notes  .
 // ......................................................................
 void CheckArgs( int argc, char *argv[], unsigned long *base,
-		char *flist, char *fauto, char *fh )
+		char *flist )
 {
 
 
@@ -209,7 +208,7 @@ void CheckArgs( int argc, char *argv[], unsigned long *base,
 
 
 	// right number of args?
-	if( argc!=(NUM_ARGS+1) )
+	if( argc!=(NUM_ARGS) )
 		ExitError( "Wrong number of arguments!" );
 
 	// is the first one a hex number?
@@ -225,6 +224,7 @@ void CheckArgs( int argc, char *argv[], unsigned long *base,
 	if( !FileExists(flist) )
 		ExitError( "List file does not exist!" );
 
+	/*
 	// duplicate names?
 	if( strcmp(fauto,flist) == 0)
 		ExitError( "The <auto file> cannot be the same as the list file!" );
@@ -232,6 +232,8 @@ void CheckArgs( int argc, char *argv[], unsigned long *base,
 		ExitError( "The <header file> cannot be the same as the list file!" );
 	if( strcmp(fh,fauto) == 0 )
 		ExitError( "The <auto file> and <header file> cannot be the same!" );
+	 */
+
 
 #if 0 //removed prompts
 	// overwrite?
@@ -265,10 +267,8 @@ char *EliminateSpaces( char *s )
 void ExitError( char *msg )
 {
 	printf( "ERROR: %s\n\n",msg );
-	printf( "Usage: yoc <hex start addr> <list file> <auto file> " \
-			"<header file>\n\n" \
-			"Use \"yoc -h\" for help.\n" );
-
+	printf( "Usage: yoc <hex start addr> <project.yoc> YOC\n" );
+	ShowHelp();
 	FCLOSEALL_FUNCTION;
 
 	exit(0);
@@ -454,18 +454,25 @@ void OverwritePrompt( char *f )
 // desc   processes the list file to create the auto and header files
 // notes  .
 // ......................................................................
-int ProcessList( long unsigned base, char *filelist, char *fileauto,
-		char *fileheader )
+int ProcessList( long unsigned base, char *filelist, char *projectname )
 {
-	FILE	*flist,*fauto,*fauto_pcsxr,*fheader,*fdata;
+	FILE	*flist,*fauto,*fautodata,*fauto_vscode,*fheader,*fdata, *fbindat, *fauto_vscodedat;
 	long	linestotal=0,
 			linesdata=0,
 			lineserrors=0,
 			is_exec;
 	char	*definename, *filename;
+	char fileheader[256]={0},fileauto[256]={0}, filevscode[256]={0}, filevscodedat[256]={0}, fileautodat[256]={0}, filebindat[256]={0};
 	long unsigned start=base,fsize=0,bytestotal=0;
 
 	char workbuffer[WBUF], *line_p;
+
+	sprintf( fileheader, "%s.h", projectname);
+	sprintf( fileauto, "%s.sio", projectname);
+	sprintf( fileautodat, "%s_dat.sio", projectname);
+	sprintf( filevscode, "%s_vscode.sio", projectname);
+	sprintf( filebindat, "%s.dat", projectname);
+	sprintf( filevscodedat, "%s_vscode_dat.sio", projectname);
 
 	// printf(" filelist: %s\n", filelist);
 	// printf(" fileauto: %s\n", fileauto);
@@ -475,45 +482,107 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 	flist=fcaseopen(filelist,"rt");
 	if( flist==NULL )
 	{
-		ExitError( "Can't open list file." );
+		ExitError( "Can't open YOC list file." );
 	}
 
 	fauto=fcaseopen(fileauto,"wt+");
 	if( fauto==NULL )
 	{
-		ExitError( "Can't write/create auto file." );
+		ExitError( "Can't write/create project.sio file." );
 	}
 
 
+	fprintf( fauto,
+			"# These constants automatically calculated with YOC %s  " \
+			"\n# (c) 3/1998 Elliott Lee.                               " \
+			"\n# Maintained here: https://github.com/gwald/YOC         " \
+			"\n#                                                       " \
+			"\n#                                                    " \
+			"\n# Base begins at 0x%8x                             " \
+			"\n#                                                    "
+			"\n#                                                    "
+			"\n",
+			PROG_VER,(unsigned int)start  );
 
+
+	fautodata=fcaseopen(fileautodat,"wt+");
+	if( fautodata==NULL )
 	{
-		char f[1024];
-
-		sprintf(f, "%s.pcsxr", fileauto);
-
-		fauto_pcsxr=fcaseopen(f,"wt+");
-
-		if( fauto_pcsxr==NULL )
-		{
-			ExitError( "Can't write/create fauto_pcsxr file." );
-		}
-
-
-		fprintf( fauto_pcsxr,
-					"# These constants automatically calculated with YAC %s  " \
-					"\n# (c) 3/1998 Elliott Lee.                               " \
-					"\n#                                                       " \
-					"\n# Include this file in your main code source.  e.g.     " \
-					"\n#                                                       " \
-					"\n#      #include \"%s\"        " \
-					"\n#                                                    " \
-					"\n# Base begins at 0x%8x                             ",
-					PROG_VER,fileheader,(unsigned int)start  );
-
-		fprintf(fauto_pcsxr, "\n#\n# PCSXR (https://www.psx.dev/getting-started) this siocons file is loaded like this in .vscode/launch.json: \n#\n# \"autorun\": [\n#   \"monitor reset shellhalt\",\n#   \"source %s\",\n#   \"load ${workspaceRootFolderName}.elf\",\n#   \"tbreak main\",\n#   \"continue\"\n#]\n\n\n",f);
-
-
+		ExitError( "Can't write/create project-dat.sio file." );
 	}
+
+
+	fprintf( fautodata,
+			"# These constants automatically calculated with YOC %s  " \
+			"\n# (c) 3/1998 Elliott Lee.                               " \
+			"\n# Maintained here: https://github.com/gwald/YOC         " \
+			"\n#                                                       " \
+			"\n#                                                    " \
+			"\n# Base begins at 0x%8x                             " \
+			"\n#                                                    "
+			"\n#                                                    "
+			"\n%s \t%s\t\t0x%lx \n",
+			PROG_VER,(unsigned int)start
+			,PREFIX_DLOAD,filebindat ,(unsigned int)start  );
+
+
+	fauto_vscode=fcaseopen(filevscode,"wt+");
+	if( fauto==NULL )
+	{
+		ExitError( "Can't write/create project_vscode.sio file." );
+	}
+
+
+
+	fprintf( fauto_vscode,
+			"# These constants automatically calculated with YOC %s  " \
+			"\n# (c) 3/1998 Elliott Lee.                               " \
+			"\n# Maintained here: https://github.com/gwald/YOC         " \
+			"\n#                                                       " \
+			"\n# Include this file in your main code source.  e.g.     " \
+			"\n#                                                       " \
+			"\n#      #include \"%s\"        " \
+			"\n#                                                    " \
+			"\n# Base begins at 0x%8x                             ",
+			PROG_VER,fileheader,(unsigned int)start  );
+
+
+	//extra info
+	fprintf(fauto_vscode,
+			"\n#\n# VSCode (https://www.psx.dev/getting-started) this siocons file is loaded like this in your .vscode/launch.json: \n#\n#\t\t \"autorun\": [\n#   \"monitor reset shellhalt\",\n#\t\t   \"source %s\",\n#\t\t   \"load ${workspaceRootFolderName}.elf\",\n#\t\t   \"tbreak main\",\n#\t\t   \"continue\"\n#\t\t]\n#\n# See https://github.com/gwald/psyq_to_netyaroze for more info.\n\n"
+			,filevscode);
+
+
+
+
+
+
+
+	fauto_vscodedat=fcaseopen(filevscodedat,"wt+");
+	if( fauto_vscodedat==NULL )
+	{
+		ExitError( "Can't write/create project_vscode_dat.sio file." );
+	}
+
+
+	fprintf( fauto_vscodedat,
+			"# These constants automatically calculated with YOC %s  " \
+			"\n# (c) 3/1998 Elliott Lee.                               " \
+			"\n# Maintained here: https://github.com/gwald/YOC         " \
+			"\n#                                                       " \
+			"\n#                                                    " \
+			"\n# Base begins at 0x%8x                             ",
+			PROG_VER,(unsigned int)start,filebindat ,(unsigned int)start  );
+
+
+
+	//extra info
+	fprintf(fauto_vscodedat,
+			"\n# VSCode (https://www.psx.dev/getting-started) this siocons file is loaded like this in your .vscode/launch.json: \n#\n#\t\t \"autorun\": [\n#\t\t   \"monitor reset shellhalt\",\n#\t\t   \"source %s\",\n#\t\t   \"load ${workspaceRootFolderName}.elf\",\n#\t\t   \"tbreak main\",\n#\t\t   \"continue\"\n#\t\t]\n#\n# See https://github.com/gwald/psyq_to_netyaroze for more info.\n"
+			,filevscodedat);
+
+	fprintf(fauto_vscodedat,"\nrestore  %s  binary  0x%lx\n",filebindat,base);
+
 
 	fheader=fcaseopen(fileheader,"wt+");
 	if( fheader==NULL )
@@ -523,15 +592,25 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 	}
 	// add some heading info
 	fprintf( fheader,
-			"/* These constants automatically calculated with YAC %s  \n" \
+			"/* These constants automatically calculated with YOC %s  \n" \
 			" (c) 3/1998 Elliott Lee.                               \n" \
-			"                                                       \n" \
+			"Maintained here: https://github.com/gwald/YOC         \n" \
+			"                                                      \n" \
 			" Include this file in your main code source.  e.g.     \n" \
 			"                                                       \n" \
 			"      #include \"%s\"        \n" \
 			"                                                       \n" \
 			" Base begins at 0x%8x                             \n*/\n\n",
 			PROG_VER,fileheader,(unsigned int)start  );
+
+
+	fbindat=fcaseopen(filebindat,"wb+");
+	if( fauto==NULL )
+	{
+		ExitError( "Can't write/create project.dat file." );
+	}
+
+
 
 	// check bounds
 	if( base<BOUND_MIN )
@@ -624,39 +703,51 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 			}  // if( *line_p!=0 )
 		}// if(!is_exec)
 
+
 		// okay, now let's get the size of the file!
 		if( !FileExists(filename) )
 		{
-			printf( "Line %ld: File not found: \"%s\".\n",linestotal,filename );
-			lineserrors++;
-			continue;
+			char buff[128]={0};
+
+			sprintf(buff, "Line %ld: File not found: \"%s\".\n",linestotal,filename );
+
+			if(!is_exec) // data needs to exist!
+				ExitError(buff );
+			else
+			{
+				// missing executable is a warning only
+				printf(buff);
+				lineserrors++;
+			}
 		}  // if( !FileExists(filename) )
-		else
+
+
 		{
 			// remember to open in BINARY mode!
 			fdata=fcaseopen(filename,"rb");
-			if( fdata==NULL )
+			if( fdata!=NULL )
 			{
-				printf( "Line %ld: Can't read \"%s\".\n",linestotal,filename );
-				lineserrors++;
-				continue;
-			}  // if( fdata==NULL )
-
+				// okay, get the size!
+				fseek(fdata,0,SEEK_END);
+				fsize=(long unsigned)ftell(fdata);
+			}
+			else
+				fsize = 0;
 
 			if(is_exec)
 			{
 				ECOHDRS exe;
 
+				if( fdata!=NULL )
+				{
+					// okay, get the size!
 
-				// okay, get the size!
-				fseek(fdata,0,SEEK_END);
-				fsize=(long unsigned)ftell(fdata);
-
-
-				rewind(fdata);
-				fread(&exe, 1, sizeof(exe), fdata);
-				fclose(fdata);
-
+					rewind(fdata);
+					fread(&exe, 1, sizeof(exe), fdata);
+					fclose(fdata);
+				}
+				else
+					fsize = 0;
 
 				// End space
 				fprintf(fheader,PREFIX_HEADER "\t%s\t\t(0x%lx) /* Address of last asset + size */ \n",
@@ -668,51 +759,68 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 
 				// cool.  now print out the entries to the two files!
-				fprintf(fauto,PREFIX_LOAD " %s\n",filename);
+				fprintf(fauto,PREFIX_LOAD "  \t%s\n",filename);
 				fprintf(fauto,GO_LOAD " \n");
+
+				fprintf(fautodata,PREFIX_LOAD "  \t%s\n",filename);
+				fprintf(fautodata,GO_LOAD " \n");
+
+
+
+
+
 				fprintf(fheader,PREFIX_HEADER "\t%s_LOAD_ADDR\t\t(0x%lx)\n",
 						(EXE_NAME_HEADER), (long unsigned int)exe.sections[0].s_paddr);
 
-				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t (%lu)\t/* %lu */\n\n",
+				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t (%lu)\t/* %lu bytes */\n\n",
 						(EXE_NAME_HEADER),fsize,fsize);
 
 				fsize = 0; //exe size doesn't count
 			}
 			else
 			{
-				// okay, get the size!
-				fseek(fdata,0,SEEK_END);
-				fsize=(long unsigned)ftell(fdata);
-				fclose(fdata);
+				char *filebindata_buff_p;
+				int fixed_size;
 
 
-				// cool.  now print out the entries to the two files!
+
+
 				fprintf(fauto,PREFIX_DLOAD "\t%s\t\t0x%lx\n",filename,base);
-
-/*  PCSXR SIO file laoded like this in the .vscode/launch.json where data.sio.pcsxr is your load batch file:
-*
-*
-"autorun": [
-	"monitor reset shellhalt",
-	"source data.sio.pcsxr",
-	"load ${workspaceRootFolderName}.elf",
-	"tbreak main",
-	"continue"
-]
-*
-*/
-				fprintf(fauto_pcsxr,"restore  %s  binary  0x%lx\n",filename,base);
+				fprintf(fauto_vscode,"restore  %s  binary  0x%lx\n",filename,base);
 
 
 
 				fprintf(fheader,PREFIX_HEADER "\t%s\t\t(0x%lx)\n",
 						definename,(long unsigned int)base);
-				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t(0x%lx)\t/* %lu */\n\n",
+				fprintf(fheader,PREFIX_HEADER "\t%s_SIZE\t\t(0x%lx)\t/* %lu bytes */\n\n",
 						definename,(long unsigned int)fsize,fsize);
+
+
+
+
+				// okay, get the size of this file!
+				fseek(fdata,0,SEEK_END);
+				fsize=(long unsigned)ftell(fdata);
+				fseek(fdata,0,SEEK_SET);
+
+				// align with the base and fsize
+				if(ALIGNMENT-(base+fsize)%ALIGNMENT != ALIGNMENT)
+					fixed_size =fsize + (ALIGNMENT-(base+fsize)%ALIGNMENT);
+				else
+					fixed_size =fsize;
+
+
+				filebindata_buff_p = calloc(1, fixed_size );
+
+				fread(filebindata_buff_p,  sizeof(char), fsize,fdata );
+				fwrite(filebindata_buff_p,  sizeof(char),fixed_size, fbindat ); //write size with the same alignment
+
+				free(filebindata_buff_p);
+
+				fclose(fdata);
+
 			}
 
-			// advance to the next base
-			bytestotal+=fsize;
 			//base+=fsize-(fsize%ALIGNMENT)+ALIGNMENT; // this adds an extra 16bytes
 
 			// printf(" base:%d + fsize:%d  = %x (base+fsize) ALIGNMENT:%d \n",base, fsize, base+ fsize, ALIGNMENT-(base+fsize)%ALIGNMENT);
@@ -720,9 +828,15 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 
 			if(ALIGNMENT-(base+fsize)%ALIGNMENT != ALIGNMENT)
-				base+=fsize + ALIGNMENT-(base+fsize)%ALIGNMENT;
-			else
-				base+=fsize;
+				fsize =fsize + (ALIGNMENT-(base+fsize)%ALIGNMENT);
+
+
+			base+=fsize;
+
+			// advance to the next base
+			bytestotal+=fsize;
+
+			fclose(fdata);
 
 			if(is_exec)
 				break;
@@ -765,7 +879,7 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 	printf( "\n" \
 			"Lines in list file:  %ld\n" \
 			"Lines processed:     %ld\n" \
-			"Lines w/ errors:     %ld\n\n" \
+			"Lines w/ warnings:   %ld\n\n" \
 			"Size to download:    %ld bytes\n" \
 			"Memory consumed:     0x%lx-0x%lx (%lu bytes)\n" \
 			"Next free mem space: 0x%lx\n\n",
@@ -774,7 +888,7 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 
 	if( lineserrors )
 	{
-		printf( "\t*** WARNING ***\n\tSome files had errors.\n" );
+		printf( "\t*** WARNING ***\n\tSome files had warnings.\n" );
 		return(1);
 	}
 
@@ -789,25 +903,30 @@ int ProcessList( long unsigned base, char *filelist, char *fileauto,
 // ......................................................................
 void ShowHelp( void )
 {
-	printf( "YOC v%s Quick Help:\n" \
+	printf( "YOC %s \n" \
 			"====================\n" \
 			"\n" \
 			"  YOC (Yaroze Offset Calculator) is used to calculate the addresses for the\n" \
-			"files you have.\n" \
-			"  The <hex start addr> is the base address to be used for offset\n" \
+			"files you have.\n\n" \
+			" YOC HexStartAddr  MyProject.yoc YOC \n" \
+			"  The <HexStartAddr> is the base address to be used for offset\n" \
 			"calculations.\n" \
-			"  The <list file> is a text file where each non-blank line is in the\n" \
+			"  The <MyProject.yoc> is a text file where each non-blank line is in the\n" \
 			"format: <constant name> <file name>.  The constant is the identifier name\n" \
 			"to be put in the header file, the file is the path to the file to include.\n" \
 			"Use whitespace between them.  You can make a line a comment by having the first\n" \
 			"character be a \"#\".\n" \
 			"The optional executable must be on the last line and without a constant_name value\n" \
-
-			"  The <auto file> is one output file which you can cut/paste into your Yaroze\n" \
+			"  The <YOC> is the name for all output files, you will get:\n"\
+			"The main output files are \n" \
+			" 1) The <YOC.sio> is one output file which you can cut/paste into your Yaroze\n" \
 			"batch loading file.  Each line will retain the path you used for the <file\n" \
-			"name>.  The <header file> is a C header file with #defines to the <file name>.\n" \
-			"\n" \
-			"(c) 3/1998 Elliott Lee.\n" \
+			"name>.  \n"
+			"2) The <YOC_vscode.sio> like the a siocons file but for vscode, see readme.md.\n" \
+
+			"3) The <YOC.h> is a C header file with #defines to the <file name>.\n" \
+			"\n\n" \
+			"(c) 3/1998 Elliott Lee.\nMaintained here: https://github.com/gwald/YOC.\n  " \
 			"Based off of a program by Don Yang.\n",
 			PROG_VER );
 }
@@ -824,23 +943,23 @@ int main( int argc, char *argv[] )
 	unsigned long	Base;
 	int	ret;
 
-	if( argc ==1 || argc != 5 )
+
+	if( argc ==1 || argc != NUM_ARGS )
 	{
 		ShowHelp();
 		exit(0);
 	}  // if( strcmpi(argv[1],"-h") )
 
 
+
 	filelist=trim(argv[2]);
-	fileauto=trim(argv[3]);
-	fileh=trim(argv[4]);
 
 	// check our parameters
-	CheckArgs( argc,argv,&Base,filelist,fileauto,fileh );
+	CheckArgs( argc,argv,&Base,filelist );
 
 
 	// away we go!
-	ret = ProcessList( Base,filelist,fileauto,fileh);
+	ret = ProcessList( Base,filelist,argv[3]);
 
 
 	return ret;
@@ -966,5 +1085,5 @@ FILE *fcaseopen(char const *path, char const *mode)
 		}
 	}
 #endif
-return f;
+	return f;
 }
