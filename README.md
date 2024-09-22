@@ -1,5 +1,5 @@
 # YOC
-Yaroze Offset Calculator - Calculates the offsets and generates 2 files for you.
+Yaroze Offset Calculator - Calculates the offsets and generates asset loading files for you.
 (c) 3/1998 Elliott Lee.
 
 Maintained here: [https://github.com/gwald/YOC](https://github.com/gwald/YOC)
@@ -30,13 +30,13 @@ You probably won't need all of them, just ingore them.
 The **YOC.sio** is created for Net Yaroze Siocons batch loading file or used with [yarexe to create a psx.exe](https://github.com/gwald/Yarexe).
 Each line will retain the path you used for the ***MyProject.yoc**. 
 
-The **YOC-vscode.sio** is the created like above but for vscode with PSX.DEV, see Template help in [https://github.com/gwald/psyq_to_netyaroze] (https://github.com/gwald/psyq_to_netyaroze)
+The **YOC-vscode.sio** is the created like above but for vscode with PSX.DEV, see Template help in [https://github.com/gwald/psyq_to_netyaroze](https://github.com/gwald/psyq_to_netyaroze)
 
 The **YOC.dat** is all the files loaded into a single binary file.
 
 The **YOC_dat.sio** is created for Net Yaroze Siocons batch loading the single dat file instead of loading all the files individually.
 
-The **YOC_vscode_dat.sio** is the created like above but for vscode, see Template help in [https://github.com/gwald/psyq_to_netyaroze] (https://github.com/gwald/psyq_to_netyaroze)
+The **YOC_vscode_dat.sio** is the created like above but for vscode, see Template help in [https://github.com/gwald/psyq_to_netyaroze](https://github.com/gwald/psyq_to_netyaroze)
 
 
 The **YOC.h** is the created C header file with #defines to the ***MyProject.yoc**.
